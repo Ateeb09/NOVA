@@ -10,11 +10,13 @@ import json
 import os
 import random
 import re
+import shutil
 import subprocess
 import sys
 if sys.stdout.encoding != 'utf-8':
     sys.stdout.reconfigure(encoding='utf-8')
 import time
+import winreg
 from datetime import datetime
 from pathlib import Path
 
@@ -129,6 +131,7 @@ Allowed actions (return exactly one line):
 - calibrate mic / calibration status / reset calibration
 - repeat last action / do nothing / greet / appreciate
 - run command <the exact command>
+- create file <filename> / delete file <filename> / create folder <foldername> / delete folder <foldername>
 
 Rules:
 - if the user says hello, hi, hey, or greets you, return: greet (only for actual greetings, not praise)
@@ -137,6 +140,7 @@ Rules:
 - For "copy the words …" or "copy text …" return one line: copy text <the phrase to find on screen>.
 - For "press key X" use a single key name. For key combos use "press keys control c".
 - If the user explicitly asks to run a system command or execute a terminal command, output ONE line: run command <the exact windows shell/powershell command>.
+- For file/folder creation and deletion, extract the exact name and extension requested (e.g. "delete file script.py", "create folder photos").
 - If unclear or silence, return: do nothing. No explanations. Only the single action line."""
 
 # Keyword catch: (list of keywords that must ALL appear in transcript, action).
@@ -170,7 +174,7 @@ KEYWORD_ACTIONS = [
     (["open", "chrome"], "open chrome"),
     (["open", "edge"], "open edge"),
     (["open", "files"], "open files"),
-    (["open", "calculator"], "open calculator"),
+    (["open", "calculator"], "open0 calculator"),
     (["open", "task", "manager"], "open task manager"),
     (["open", "settings"], "open settings"),
     (["open", "cmd"], "open cmd"),
@@ -275,6 +279,14 @@ KEYWORD_ACTIONS = [
     (["previous"], "previous track"),
 ]
 
+
+def get_desktop_path() -> str:
+    try:
+        key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders")
+        path, _ = winreg.QueryValueEx(key, "Desktop")
+        return os.path.expandvars(path)
+    except Exception:
+        return os.path.join(os.environ.get("USERPROFILE", ""), "Desktop")
 
 def load_config():
     if CONFIG_PATH.exists():
@@ -544,6 +556,25 @@ def rule_based_intent(text: str) -> str:
     # Appreciation
     if "thank you" in t or t == "thanks" or "appreciate" in t or "amazing" in t or "good job" in t or "great work" in t or "awesome" in t or "nice" in t:
         return "appreciate"
+
+    # Files and Folders (Must be before apps so 'file' doesn't trigger 'open files')
+    t_clean = re.sub(r"[^\w\s]", "", t) # remove punctuation
+    if t_clean.startswith("create file "):
+        filename = t_clean.replace("create file ", "", 1).strip()
+        if filename:
+            return f"create file {filename}"
+    if t_clean.startswith("delete file "):
+        filename = t_clean.replace("delete file ", "", 1).strip()
+        if filename:
+            return f"delete file {filename}"
+    if t_clean.startswith("create folder ") or t_clean.startswith("make folder "):
+        foldername = t_clean.replace("create folder ", "", 1).replace("make folder ", "", 1).strip()
+        if foldername:
+            return f"create folder {foldername}"
+    if t_clean.startswith("delete folder ") or t_clean.startswith("remove folder "):
+        foldername = t_clean.replace("delete folder ", "", 1).replace("remove folder ", "", 1).strip()
+        if foldername:
+            return f"delete folder {foldername}"
 
     # Apps
     if re.search(r"\b(open\s+)?notepad\b", t):
@@ -1045,6 +1076,74 @@ def execute_action(action: str) -> str:
                 return f"Command execution failed: {e}"
         else:
             return "Command cancelled."
+
+    # ----- Files and Folders -----
+    if action.startswith("create file "):
+        filename = action.replace("create file ", "").strip()
+        desktop = get_desktop_path()
+        filepath = os.path.join(desktop, filename)
+        try:
+            with open(filepath, 'w') as f:
+                pass
+            last_action = action
+            return f"Created file {filename} on Desktop"
+        except Exception as e:
+            return f"Failed to create file: {e}"
+
+    if action.startswith("delete file "):
+        filename = action.replace("delete file ", "").strip()
+        desktop = get_desktop_path()
+        filepath = os.path.join(desktop, filename)
+        if not os.path.exists(filepath):
+            return f"File {filename} not found on Desktop"
+        
+        get_engine().say(f"Are you sure you want to delete the file {filename}?")
+        get_engine().runAndWait()
+        print(f"⚠️ Agent wants to delete file: {filepath}")
+        record_audio()
+        confirmation = speech_to_text()
+        
+        if "yes" in confirmation or "confirm" in confirmation:
+            try:
+                os.remove(filepath)
+                return f"Deleted file {filename}"
+            except Exception as e:
+                return f"Failed to delete file: {e}"
+        else:
+            return "File deletion cancelled."
+
+    if action.startswith("create folder "):
+        foldername = action.replace("create folder ", "").strip()
+        desktop = get_desktop_path()
+        folderpath = os.path.join(desktop, foldername)
+        try:
+            os.makedirs(folderpath, exist_ok=True)
+            last_action = action
+            return f"Created folder {foldername} on Desktop"
+        except Exception as e:
+            return f"Failed to create folder: {e}"
+
+    if action.startswith("delete folder "):
+        foldername = action.replace("delete folder ", "").strip()
+        desktop = get_desktop_path()
+        folderpath = os.path.join(desktop, foldername)
+        if not os.path.exists(folderpath):
+            return f"Folder {foldername} not found on Desktop"
+        
+        get_engine().say(f"Are you sure you want to delete the folder {foldername}?")
+        get_engine().runAndWait()
+        print(f"⚠️ Agent wants to delete folder: {folderpath}")
+        record_audio()
+        confirmation = speech_to_text()
+        
+        if "yes" in confirmation or "confirm" in confirmation:
+            try:
+                shutil.rmtree(folderpath)
+                return f"Deleted folder {foldername}"
+            except Exception as e:
+                return f"Failed to delete folder: {e}"
+        else:
+            return "Folder deletion cancelled."
 
     # ----- Apps -----
     if action == "open notepad":
