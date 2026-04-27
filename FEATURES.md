@@ -19,6 +19,7 @@ This document lists **all actions** the agent can perform and the **permissions 
 | System power   | 4     | Lock/sleep/shutdown/restart (user level) |
 | Info           | 3     | Time, date, clipboard read               |
 | Meta           | 1     | Repeat last action                       |
+| Files & Folders| 4     | Desktop read/write access                |
 
 **Overall permission:** The agent runs with **the same rights as the user** who started it. No administrator privilege is required for the listed features. For **shutdown/restart**, the user must have normal “shut down the computer” rights (default on a personal PC).
 
@@ -189,6 +190,19 @@ This document lists **all actions** the agent can perform and the **permissions 
 | # | Action             | What it does        | Permission / requirement |
 |---|--------------------|---------------------|---------------------------|
 | 1 | Repeat last action | Repeats last command| Same as the repeated action |
+
+---
+
+## 12. Files & Folders
+
+| # | Action             | What it does        | Permission / requirement |
+|---|--------------------|---------------------|---------------------------|
+| 1 | Create file        | Creates an empty file on the Desktop  | Read/Write to Desktop     |
+| 2 | Delete file        | Deletes a file from the Desktop       | Read/Write to Desktop     |
+| 3 | Create folder      | Creates a new folder on the Desktop   | Read/Write to Desktop     |
+| 4 | Delete folder      | Deletes a folder from the Desktop     | Read/Write to Desktop     |
+
+**Permissions:** The agent dynamically resolves the true path of your Windows Desktop using the registry. It requires normal user read/write permissions to create and delete files/folders on the Desktop. Deletions are safeguarded with a mandatory voice confirmation prompt.
 
 ---
 
