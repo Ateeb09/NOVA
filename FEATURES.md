@@ -206,6 +206,19 @@ This document lists **all actions** the agent can perform and the **permissions 
 
 ---
 
+## 13. Web Interface (Dashboard & Widget)
+
+| # | Feature            | What it does        | Permission / requirement |
+|---|--------------------|---------------------|---------------------------|
+| 1 | Central Dashboard  | Displays live telemetry, terminal stream, and state. | Open port 5000 (Flask)    |
+| 2 | Widget Mode        | Minimizes into a floating, draggable orb. | Browser access            |
+| 3 | Audio Controls     | Adjust mic sensitivity and output volume via sliders. | Browser UI                |
+| 4 | Real-time Sync     | Uses SSE to instantly sync voice logic to the UI. | None                      |
+
+**Permissions:** The web application requires access to run a local Flask server on port `5000` (or `http://127.0.0.1:5000`). It uses Server-Sent Events (SSE) to maintain a live feed of agent activity.
+
+---
+
 ## What to allow when Windows / antivirus asks
 
 - **Microphone:** Required for voice input.  

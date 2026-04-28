@@ -59,8 +59,18 @@ Offline voice-controlled task automation for your computer using **agentic AI**.
 
 ## Usage
 
-Run the main agent:
+You can run the agent in two ways:
 
+### 1. Web Dashboard & Widget (Recommended)
+Launch the full-stack web application, which provides a cyberpunk-themed dashboard and a floating, draggable widget.
+```bash
+python web_app.py
+```
+- Open `http://127.0.0.1:5000` in your browser.
+- Use the **WIDGET MODE** button to minimize the dashboard into a floating, draggable orb that stays out of your way.
+
+### 2. Terminal Mode
+Run the main agent purely in the terminal:
 ```bash
 python voice_agent.py
 ```
