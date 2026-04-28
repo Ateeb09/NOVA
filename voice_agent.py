@@ -113,6 +113,7 @@ Allowed actions (return exactly one line):
 - open task manager / open settings / open cmd / open powershell / open paint / open sticky notes
 - open desktop / open documents / open downloads
 - google search <query> / youtube search <query> / open url <url>
+- whatsapp message <contact> | <message>
 - scroll up / scroll down / scroll left / scroll right
 - click center / move mouse left / move mouse right / move mouse up / move mouse down
 - double click / right click
@@ -141,6 +142,8 @@ Rules:
 - For "press key X" use a single key name. For key combos use "press keys control c".
 - If the user explicitly asks to run a system command or execute a terminal command, output ONE line: run command <the exact windows shell/powershell command>.
 - For file/folder creation and deletion, extract the exact name and extension requested (e.g. "delete file script.py", "create folder photos").
+- If user says "open whatsapp [name] ko message bhejo [message]", return: whatsapp message <name> | <message>
+- If user says "youtube pe [query] dhundo", return: youtube search <query>
 - If unclear or silence, return: do nothing. No explanations. Only the single action line."""
 
 # Keyword catch: (list of keywords that must ALL appear in transcript, action).
@@ -542,6 +545,133 @@ def ask_ollama(user_text: str) -> str:
         print("⚠️ Ollama error:", e)
         return ""
 
+#################################################################################
+#-----------------------dynamic code for asking llm-----------------------------#
+#################################################################################
+
+
+def ask_llm_for_dynamic_code(user_text: str) -> str:
+    """
+    Ask LLM to generate Python code for commands not in the hardcoded list.
+    Returns executable Python code string or empty string if failed.
+    """
+    prompt = f"""You are a Windows computer automation expert.
+The user gave this voice command: "{user_text}"
+
+Write a single Python code snippet to fulfill this on Windows.
+You can use: pyautogui, subprocess, os, time, webbrowser, keyboard shortcuts.
+
+Rules:
+- Return ONLY executable Python code, nothing else
+- No markdown, no backticks, no explanation
+- No imports needed, all libraries are already available
+- Keep it short, max 5 lines
+- If you truly cannot do it, return exactly: CANNOT_DO
+
+Examples:
+User: open spotify
+Code: subprocess.Popen(['cmd', '/c', 'start', 'spotify:'])
+
+User: move mouse to top right corner
+Code: pyautogui.moveTo(pyautogui.size()[0] - 10, 10, duration=0.5)
+
+User: type my name is nova
+Code: pyperclip.copy('my name is nova'); pyautogui.hotkey('ctrl', 'v')
+"""
+
+    # Try Gemini first
+    if USE_GEMINI_LLM and GEMINI_API_KEY and _REQUESTS_AVAILABLE:
+        try:
+            r = requests.post(
+                f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent?key={GEMINI_API_KEY}",
+                headers={"Content-Type": "application/json"},
+                json={
+                    "contents": [{"parts": [{"text": prompt}]}],
+                    "generationConfig": {"temperature": 0.1, "maxOutputTokens": 200},
+                },
+                timeout=GEMINI_TIMEOUT,
+            )
+            r.raise_for_status()
+            data = r.json()
+            candidates = data.get("candidates") or []
+            if candidates:
+                parts = candidates[0].get("content", {}).get("parts", [])
+                if parts:
+                    code = (parts[0].get("text") or "").strip()
+                    # Clean markdown if LLM adds it anyway
+                    code = re.sub(r"```python|```", "", code).strip()
+                    return code
+        except Exception as e:
+            print("⚠️ Gemini dynamic code error:", e)
+
+    # Try Ollama fallback
+    if USE_OLLAMA and _REQUESTS_AVAILABLE:
+        try:
+            r = requests.post(
+                OLLAMA_URL,
+                json={"model": OLLAMA_MODEL, "prompt": prompt, "stream": False},
+                timeout=OLLAMA_TIMEOUT,
+            )
+            data = r.json()
+            code = (data.get("response") or "").strip()
+            code = re.sub(r"```python|```", "", code).strip()
+            return code
+        except Exception as e:
+            print("⚠️ Ollama dynamic code error:", e)
+
+    return ""
+
+
+def execute_dynamic_code(code: str, user_text: str) -> str:
+    """
+    Safely execute LLM-generated code with voice confirmation first.
+    """
+    if not code or code.strip() == "CANNOT_DO":
+        return "I don't know how to do that yet"
+
+    # Sanitiy check — block dangerous commands
+    blocked = ["rmdir", "del ", "format ", "shutil.rmtree", "os.remove",
+               "shutdown", "registry", "regedit", "sys.exit", "__import__"]
+    code_lower = code.lower()
+    for danger in blocked:
+        if danger in code_lower:
+            return f"I blocked that command for safety — it contains '{danger}'"
+
+    # Voice confirmation before executing
+    preview = code[:80] + ("..." if len(code) > 80 else "")
+    print(f"🤖 Dynamic code to run:\n{code}\n")
+    get_engine().say(f"Should I run this? {user_text}")
+    get_engine().runAndWait()
+
+    record_audio("🎤 Say yes to confirm or no to cancel...")
+    confirmation = speech_to_text()
+
+    if "yes" in confirmation or "confirm" in confirmation or "do it" in confirmation:
+        try:
+            # Safe execution context — only expose needed libraries
+            exec_globals = {
+                "pyautogui": pyautogui,
+                "subprocess": subprocess,
+                "os": os,
+                "time": time,
+                "re": re,
+                "pyperclip": pyperclip if _PYPERCLIP_AVAILABLE else None,
+                "webbrowser": __import__("webbrowser"),
+                "Path": Path,
+            }
+            exec(code, exec_globals)
+            return f"Done: {user_text}"
+        except Exception as e:
+            return f"Dynamic execution failed: {e}"
+    else:
+        return "Cancelled"
+
+
+#################################################################################
+#--------------------------------------Finish------------------------------------
+#################################################################################
+
+
 
 # --------------- Rule-based fallback (offline when Ollama is down) ---------------
 def rule_based_intent(text: str) -> str:
@@ -634,12 +764,18 @@ def rule_based_intent(text: str) -> str:
         q = re.sub(r"\s+(on|in)\s+(google|chrome).*$", "", q, flags=re.I).strip()
         if q:
             return f"google search {q}"
-    if "youtube" in t and ("search" in t or "play" in t or "find" in t):
-        q = re.sub(r"^(.*?)(search|play|find)\s+(for\s+)?", "", t, flags=re.I)
-        q = re.sub(r"\s+(on|in)\s+youtube.*$", "", q, flags=re.I).strip()
+    if "youtube" in t and ("search" in t or "play" in t or "find" in t or "dhundo" in t):
+        q = re.sub(r"^(.*?)(search|play|find|dhundo)\s+(for\s+)?", "", t, flags=re.I)
+        q = re.sub(r"\s+(on|in|pe)\s+youtube.*$", "", q, flags=re.I).strip()
+        q = re.sub(r"^youtube\s*pe\s*", "", q, flags=re.I).strip()
         if q:
             return f"youtube search {q}"
-        return "youtube search " + t.replace("youtube", "").replace("search", "").replace("play", "").strip() or "music"
+        return "youtube search " + t.replace("youtube", "").replace("search", "").replace("play", "").replace("dhundo", "").replace("pe", "").strip() or "music"
+        
+    # WhatsApp
+    m_wa = re.search(r"whatsapp\s+(.+?)\s+ko\s+message\s+bhejo\s+(.+)$", t)
+    if m_wa:
+        return f"whatsapp message {m_wa.group(1).strip()} | {m_wa.group(2).strip()}"
     if "open url" in t or "open website" in t or "go to" in t:
         url = t.replace("open url", "").replace("open website", "").replace("go to", "").strip()
         if url and len(url) > 3:
@@ -1033,7 +1169,8 @@ def launch_shortcut_target(path_or_url: str) -> None:
 
 
 # --------------- Execute actions ---------------
-def execute_action(action: str) -> str:
+#def execute_action(action: str) -> str:
+def execute_action(action: str, original_text: str = "") -> str:
     global last_action, last_query, CALIBRATED_NOISE_FLOOR, CALIBRATED_AT
     if not action or action == "do nothing":
         return "I did nothing"
@@ -1255,6 +1392,60 @@ def execute_action(action: str) -> str:
             return f"Could not open shortcut: {e}"
         last_action = action
         return f"Opening {name}"
+
+    # ----- WhatsApp -----
+    if action.startswith("whatsapp message"):
+        parts = action.replace("whatsapp message", "", 1).split("|")
+        if len(parts) == 2:
+            contact = parts[0].strip()
+            message = parts[1].strip()
+            
+            # 1. Open WhatsApp
+            target = resolve_app_shortcut("whatsapp")
+            if target:
+                launch_shortcut_target(target)
+            else:
+                pyautogui.press("win")
+                time.sleep(0.5)
+                pyautogui.write("whatsapp", interval=0.05)
+                time.sleep(1.0)
+                pyautogui.press("enter")
+                
+            time.sleep(4.0)
+            
+            # 2. Search the contact
+            pyautogui.hotkey("ctrl", "f")
+            time.sleep(1.0)
+            pyautogui.write(contact, interval=0.05)
+            time.sleep(2.5)
+            
+            # 3. Open the chat
+            pyautogui.press("down")
+            time.sleep(0.5)
+            pyautogui.press("enter")
+            time.sleep(1.5)
+            
+            # 4. Type the message
+            pyautogui.write(message, interval=0.05)
+            
+            # 5. Ask: "Bhejun?"
+            get_engine().say("Bhejun?")
+            get_engine().runAndWait()
+            
+            print(f"⚠️ Agent wants to send WhatsApp message to {contact}.")
+            record_audio()
+            confirmation = speech_to_text()
+            
+            if any(word in confirmation for word in ["haan", "yes", "send", "bhej", "karo", "ha"]):
+                pyautogui.press("enter")
+                last_action = action
+                return f"Sent WhatsApp message to {contact}"
+            else:
+                pyautogui.hotkey("ctrl", "a")
+                pyautogui.press("backspace")
+                return "WhatsApp message cancelled."
+        else:
+            return "Please specify both contact and message for WhatsApp."
 
     # ----- Web Search -----
     if action.startswith("youtube search"):
@@ -1644,7 +1835,20 @@ def execute_action(action: str) -> str:
             return execute_action(last_action)
         return "No previous action to repeat"
 
-    return "I did nothing"
+    # return "i did nothing"
+
+    # ── Dynamic fallback ──────────────────────────────────────────
+    print(f"⚡ No hardcoded action matched. Trying dynamic execution for: '{action}'")
+    context = original_text if original_text else action  # ← add this
+    code = ask_llm_for_dynamic_code(context)              # ← updated
+    if code and code.strip() != "CANNOT_DO":
+        result = execute_dynamic_code(code, context)      # ← updated
+        if result and result != "Cancelled":
+            last_action = action
+        return result
+    return "I don't know how to do that"
+
+    #----end of dynamic fallback-------------------------------------
 
 
 # --------------- Main loop ---------------
@@ -1739,7 +1943,8 @@ def main(event_callback=None):
             emit('status', 'Listening...')
             continue
 
-        result = execute_action(decision)
+        #result = execute_action(decision)
+        result = execute_action(decision, original_text=user_text)
         emit('action_result', result)
         emit('status', 'Listening...')
         print("✅ Agent:", result)
