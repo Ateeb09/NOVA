@@ -546,3 +546,321 @@ h1 {
     .status-indicator { flex-direction: column; gap: 1rem; text-align: center; }
     .logo-container::before, .logo-container::after { display: none; }
 }
+
+/* ═══════════════════════════════════════════
+   WIDGET UI STYLES
+═══════════════════════════════════════════ */
+
+body.widget-mode {
+    background: var(--bg-base);
+    overflow: hidden;
+    width: 100vw;
+    height: 100vh;
+}
+
+body.widget-mode #dashboard-view {
+    display: none;
+}
+
+body.dashboard-mode #widget-view {
+    display: none;
+}
+
+.nova-widget {
+    width: 340px;
+    height: 285px;
+    background: rgba(5, 5, 15, 0.92);
+    border-radius: 22px;
+    border: 1px solid rgba(120, 80, 255, 0.18);
+    backdrop-filter: blur(20px);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-start;
+    padding: 12px 14px 10px;
+    position: fixed;
+    top: 14px;
+    right: 14px;
+    overflow: hidden;
+    box-shadow:
+        0 0 34px rgba(100, 60, 255, 0.14),
+        0 12px 36px rgba(0, 0, 0, 0.45),
+        inset 0 1px 0 rgba(255, 255, 255, 0.05);
+    transition: width 0.25s ease, height 0.25s ease, opacity 0.2s ease;
+    cursor: grab;
+    z-index: 9999;
+}
+
+.nova-widget.dragging {
+    cursor: grabbing;
+}
+
+.nova-widget::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background-image:
+        linear-gradient(rgba(100, 80, 255, 0.04) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(100, 80, 255, 0.04) 1px, transparent 1px);
+    background-size: 28px 28px;
+    border-radius: 22px;
+    pointer-events: none;
+}
+
+.widget-header {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    z-index: 10;
+    margin-bottom: 2px;
+}
+
+.brand {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.brand-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #7c5cfc;
+    box-shadow: 0 0 8px #7c5cfc;
+    animation: pulse-dot 2s ease-in-out infinite;
+}
+
+@keyframes pulse-dot {
+    0%, 100% { opacity: 1; box-shadow: 0 0 8px #7c5cfc; }
+    50% { opacity: 0.5; box-shadow: 0 0 3px #7c5cfc; }
+}
+
+.brand-name {
+    font-size: 16px;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    background: linear-gradient(90deg, #a78bfa, #60a5fa);
+    background-clip: text;
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+}
+
+.widget-header-actions {
+    display: flex;
+    gap: 6px;
+}
+
+.icon-btn {
+    width: 38px;
+    height: 34px;
+    border-radius: 8px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    background: rgba(255, 255, 255, 0.04);
+    color: rgba(255, 255, 255, 0.5);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 16px;
+    transition: all 0.2s;
+}
+
+.icon-btn:hover {
+    background: rgba(255, 255, 255, 0.1);
+    color: #fff;
+    border-color: rgba(120, 80, 255, 0.4);
+}
+
+.blob-area {
+    position: relative;
+    width: 210px;
+    height: 210px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 5;
+    margin: 10px 0 0;
+}
+
+canvas#blobCanvas {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+}
+
+.mic-icon {
+    position: relative;
+    z-index: 10;
+    width: 58px;
+    height: 58px;
+    border-radius: 50%;
+    background: rgba(10, 5, 30, 0.7);
+    border: 1.5px solid rgba(160, 120, 255, 0.4);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all 0.3s;
+    backdrop-filter: blur(10px);
+}
+
+.mic-icon:hover {
+    border-color: rgba(160, 120, 255, 0.9);
+    box-shadow: 0 0 20px rgba(130, 90, 255, 0.5);
+}
+
+.mic-icon svg {
+    width: 24px;
+    height: 24px;
+    fill: rgba(180, 150, 255, 0.9);
+}
+
+.status-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    z-index: 10;
+    margin-top: 2px;
+}
+
+.status-indicator {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: #4ade80;
+    box-shadow: 0 0 8px #4ade80;
+}
+
+.status-indicator.sleeping {
+    background: #6366f1;
+    box-shadow: 0 0 6px #6366f1;
+}
+
+.status-indicator.listening {
+    background: #a78bfa;
+    box-shadow: 0 0 10px #a78bfa;
+    animation: blink 0.8s ease-in-out infinite;
+}
+
+.status-indicator.processing {
+    background: #facc15;
+    box-shadow: 0 0 8px #facc15;
+    animation: blink 0.4s ease-in-out infinite;
+}
+
+.status-indicator.speaking {
+    background: #34d399;
+    box-shadow: 0 0 10px #34d399;
+    animation: blink 0.6s ease-in-out infinite;
+}
+
+@keyframes blink {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.3; }
+}
+
+.status-text {
+    font-size: 25px;
+    color: rgba(200, 190, 255, 0.66);
+    letter-spacing: 0.05em;
+    font-weight: 600;
+}
+
+.transcript-text {
+    font-size: 12px;
+    color: rgba(230, 220, 255, 0.88);
+    line-height: 1.4;
+    font-style: italic;
+    transition: all 0.3s;
+    overflow: hidden;
+    display: -webkit-box;
+    line-clamp: 2;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+}
+
+.log-item {
+    font-size: 10.5px;
+    color: rgba(160, 150, 200, 0.5);
+    line-height: 1.4;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    padding: 1px 0;
+    transition: opacity 0.5s;
+}
+
+.log-item.new {
+    color: rgba(167, 139, 250, 0.7);
+}
+
+.drag-handle {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 30px;
+    cursor: move;
+    z-index: 0;
+}
+
+.nova-widget.minimized {
+    width: 74px;
+    height: 74px;
+    border-radius: 999px;
+    padding: 0;
+    overflow: visible;
+}
+
+.nova-widget.minimized::before {
+    border-radius: 999px;
+}
+
+.nova-widget.minimized .widget-header,
+.nova-widget.minimized .blob-area,
+.nova-widget.minimized .status-row,
+.nova-widget.minimized .transcript-box,
+.nova-widget.minimized .log-feed {
+    display: none !important;
+}
+
+.mini-assistant {
+    display: none;
+    position: absolute;
+    inset: 0;
+    border-radius: 999px;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid rgba(160, 120, 255, 0.45);
+    background: radial-gradient(circle at 35% 30%, rgba(120, 80, 255, 0.5), rgba(18, 14, 38, 0.95));
+    box-shadow:
+        0 0 16px rgba(120, 80, 255, 0.45),
+        0 8px 24px rgba(0, 0, 0, 0.4);
+    cursor: pointer;
+    z-index: 30;
+}
+
+.mini-assistant svg {
+    width: 22px;
+    height: 22px;
+    fill: rgba(220, 200, 255, 0.95);
+}
+
+.mini-dot {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #8b5cf6;
+    box-shadow: 0 0 10px #8b5cf6;
+    animation: pulse-dot 1.5s ease-in-out infinite;
+}
+
+.nova-widget.minimized .mini-assistant {
+    display: flex;
+}
