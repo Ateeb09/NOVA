@@ -771,6 +771,12 @@ def rule_based_intent(text: str) -> str:
         if q:
             return f"youtube search {q}"
         return "youtube search " + t.replace("youtube", "").replace("search", "").replace("play", "").replace("dhundo", "").replace("pe", "").strip() or "music"
+    # Handle "youtube pe <query>" even when user does not say "search/play"
+    m_yt = re.search(r"\byoutube\s*pe\s+(.+)$", t, flags=re.I)
+    if m_yt:
+        q = m_yt.group(1).strip()
+        if q:
+            return f"youtube search {q}"
         
     # WhatsApp
     m_wa = re.search(r"whatsapp\s+(.+?)\s+ko\s+message\s+bhejo\s+(.+)$", t)
@@ -953,6 +959,121 @@ def keyword_catch(text: str) -> str:
     return "do nothing"
 
 
+def normalize_decision_action(decision: str, user_text: str = "") -> str:
+    """
+    Normalize imperfect LLM/rule outputs into supported canonical actions.
+    Helps route near-miss YouTube intents (e.g. "open youtube and search...").
+    """
+    d = (decision or "").strip().lower()
+    if not d:
+        return "do nothing"
+
+    if "youtube" in d:
+        if d.startswith("youtube search "):
+            return d
+
+        m = re.search(r"\b(search|find|play)\s+(.+?)\s+(?:on|in|pe)\s+youtube\b", d)
+        if m:
+            q = m.group(2).strip(" .,!?:;")
+            if q:
+                return f"youtube search {q}"
+
+        m = re.search(r"\byoutube\b.*?\b(search|find|play)\s+(?:for\s+)?(.+)$", d)
+        if m:
+            q = m.group(2).strip(" .,!?:;")
+            q = re.sub(r"\b(on|in|pe)\s+youtube\b", "", q).strip()
+            if q:
+                return f"youtube search {q}"
+
+        m = re.search(r"\byoutube(?:\s+pe)?\s+(.+)$", d)
+        if m:
+            q = m.group(1).strip(" .,!?:;")
+            q = re.sub(r"\b(search|find|play)\b", "", q).strip()
+            if q:
+                return f"youtube search {q}"
+
+        return "youtube search"
+
+    if d == "open0 calculator":
+        return "open calculator"
+
+    return d
+
+
+def extract_youtube_query(text: str) -> str:
+    """Extract a likely YouTube query from raw transcript text."""
+    t = (text or "").strip().lower()
+    if not t:
+        return ""
+
+    # remove wake word if present
+    if WAKE_WORD and WAKE_WORD in t:
+        t = t.replace(WAKE_WORD, " ").strip()
+
+    # Common forms:
+    # "search lofi on youtube", "find xyz on youtube", "play xyz on youtube"
+    m = re.search(r"\b(?:search|find|play)\s+(.+?)\s+(?:on|in|pe)\s+youtube\b", t)
+    if m:
+        return m.group(1).strip(" .,!?:;")
+
+    # "youtube pe xyz dhundo", "youtube pe xyz"
+    m = re.search(r"\byoutube\s*pe\s+(.+)$", t)
+    if m:
+        q = re.sub(r"\b(?:dhundo|search|find|play)\b", "", m.group(1), flags=re.I).strip()
+        return q.strip(" .,!?:;")
+
+    # "youtube search xyz" / "search youtube xyz"
+    m = re.search(r"\byoutube\s+(?:search|find|play)\s+(.+)$", t)
+    if m:
+        return m.group(1).strip(" .,!?:;")
+    m = re.search(r"\b(?:search|find|play)\s+youtube\s+(.+)$", t)
+    if m:
+        return m.group(1).strip(" .,!?:;")
+
+    # Generic fallback: if youtube exists, strip obvious control words
+    if "youtube" in t:
+        q = re.sub(r"\byoutube\b", " ", t)
+        q = re.sub(r"\b(?:search|find|play|on|in|pe|for|please|open)\b", " ", q)
+        q = re.sub(r"\s+", " ", q).strip(" .,!?:;")
+        return q
+
+    return ""
+
+
+def perform_youtube_search_input(query: str) -> None:
+    """
+    Reliable YouTube in-page search:
+    - Try to focus browser window
+    - Use '/' shortcut to focus search box
+    - Paste query (fallback to typing), then Enter
+    """
+    q = (query or "").strip()
+    if not q:
+        return
+
+    # Give Chrome a moment to come to foreground naturally after launch.
+    time.sleep(1.2)
+
+    # Single submit; do not repeat typing after first Enter.
+    for _ in range(1):
+        pyautogui.press("esc")
+        time.sleep(0.15)
+        pyautogui.press("/")
+        time.sleep(0.35)
+        # Do not use Ctrl+A here; if focus is wrong it selects all page content.
+        if _PYPERCLIP_AVAILABLE:
+            try:
+                pyperclip.copy(q)
+                pyautogui.hotkey("ctrl", "v")
+            except Exception:
+                pyautogui.typewrite(q, interval=0.04)
+        else:
+            pyautogui.typewrite(q, interval=0.04)
+        time.sleep(0.15)
+        pyautogui.press("enter")
+        break
+
+
 def decide_action(user_text: str) -> str:
     """Decide action: Gemini first, then Ollama, then rules, then keyword catch."""
     decision = ""
@@ -965,7 +1086,7 @@ def decide_action(user_text: str) -> str:
         decision = rule_based_intent(user_text)
     if (not decision or decision.strip() == "" or decision == "do nothing") and USE_KEYWORD_CATCH:
         decision = keyword_catch(user_text)
-    return decision.strip() or "do nothing"
+    return normalize_decision_action(decision, user_text)
 
 
 # --------------- Screen OCR (Tesseract) ---------------
@@ -1449,27 +1570,26 @@ def execute_action(action: str, original_text: str = "") -> str:
 
     # ----- Web Search -----
     if action.startswith("youtube search"):
-        query = action.replace("youtube search", "").strip() or last_query
+        query = action.replace("youtube search", "").strip()
+        if not query:
+            query = extract_youtube_query(original_text)
+        if not query:
+            query = last_query
         if not query:
             return "No search query detected"
         last_query = query
         last_action = f"youtube search {query}"
         
-        # Open YouTube main page
+        # Open YouTube first, then type query in search box.
         if PATH_CHROME and os.path.isfile(PATH_CHROME):
             subprocess.Popen([PATH_CHROME, "--start-maximized", "https://www.youtube.com"])
         else:
             subprocess.Popen(["cmd", "/c", "start", "chrome", "--start-maximized", "https://www.youtube.com"])
-            
-        # Wait for YouTube to load, then type and search
-        time.sleep(3.5)
-        pyautogui.press("/")
-        time.sleep(0.5)
-        pyautogui.hotkey("ctrl", "a")
-        pyautogui.press("backspace")
-        pyautogui.typewrite(query, interval=0.06)
-        pyautogui.press("enter")
-        
+
+        # Wait for page load and then inject query into YouTube search.
+        time.sleep(4.0)
+        perform_youtube_search_input(query)
+
         return f"Searching YouTube for {query}"
 
     if action.startswith("google search") or action.startswith("chrome search"):
